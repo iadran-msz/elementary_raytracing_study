@@ -2,16 +2,40 @@
 
 A importer en tout premier, avant tout autre usage de mitsuba :
 
-    import mitsuba_config  # active la bonne variante
+    import mitsuba_config  # active automatiquement la meilleure variante
     import mitsuba as mi
 
-Pour changer de machine : commente/decommente la ligne correspondante
-ci-dessous, une seule fois, ici. Tous les scripts et notebooks du projet
-qui font `import mitsuba_config` recuperent automatiquement le changement.
+La variante est choisie automatiquement selon ce qui est reellement
+utilisable sur la machine (comme `torch.cuda.is_available()` avec PyTorch) :
+CUDA si un GPU compatible est detecte (typiquement Colab), sinon LLVM (CPU,
+typiquement le PC Linux), sinon la variante generique scalar_rgb (fonctionne
+toujours, sans acceleration).
 """
 
 import mitsuba as mi
 
-# mi.set_variant("scalar_rgb")     # generique, sans acceleration (fonctionne partout)
-mi.set_variant("llvm_ad_rgb")      # PC Linux (CPU, avec autodiff)
-# mi.set_variant("cuda_ad_rgb")    # Google Colab (GPU, avec autodiff)
+_available = mi.variants()
+
+
+def _try_variant(name: str) -> bool:
+    """Essaie d'activer une variante et de creer un objet dessus (test reel,
+    pas juste la presence dans mi.variants()). Retourne True si ca marche."""
+    if name not in _available:
+        return False
+    try:
+        mi.set_variant(name)
+        mi.Float(0.0)  # force l'initialisation du backend (CUDA/LLVM)
+        return True
+    except Exception:
+        return False
+
+
+if _try_variant("cuda_ad_rgb"):
+    variant = "cuda_ad_rgb"
+elif _try_variant("llvm_ad_rgb"):
+    variant = "llvm_ad_rgb"
+else:
+    variant = "scalar_rgb"
+    mi.set_variant(variant)
+
+print(f"[mitsuba_config] variante activee : {variant}")
