@@ -19,11 +19,24 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
 
+# Identite utilisee pour les commits si le depot n'en a pas deja une
+# configuree (ex: conteneur Colab, neuf a chaque session). N'est jamais
+# ecrite en configuration globale, uniquement locale a ce depot.
+DEFAULT_NAME = "Adrian Marszalek"
+DEFAULT_EMAIL = "adr.mrzk@gmail.com"
+
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         cmd, cwd=REPO_DIR, capture_output=True, text=True
     )
+
+
+def _ensure_git_identity() -> None:
+    for key, value in (("user.name", DEFAULT_NAME), ("user.email", DEFAULT_EMAIL)):
+        current = _run(["git", "config", key])
+        if not current.stdout.strip():
+            _run(["git", "config", key, value])
 
 
 def save_to_git(message: str | None = None) -> None:
@@ -34,6 +47,8 @@ def save_to_git(message: str | None = None) -> None:
     """
     if message is None:
         message = f"Sauvegarde automatique du {datetime.now():%Y-%m-%d %H:%M}"
+
+    _ensure_git_identity()
 
     status = _run(["git", "status", "--porcelain"])
     if not status.stdout.strip():
