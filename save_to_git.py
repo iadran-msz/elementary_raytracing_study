@@ -12,6 +12,8 @@ Utilisation depuis un notebook :
     save_to_git("message de commit")
 """
 
+import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -39,11 +41,29 @@ def _ensure_git_identity() -> None:
             _run(["git", "config", key, value])
 
 
-def save_to_git(message: str | None = None) -> None:
+def _push_url_with_token(token: str) -> str | None:
+    """Construit l'URL du remote courant avec le token GitHub insere dedans,
+    sans jamais l'ecrire dans la config git (donc pas de fuite dans .git/config)."""
+    remote_name = _run(["git", "remote"]).stdout.strip().splitlines()
+    if not remote_name:
+        return None
+    url = _run(["git", "remote", "get-url", remote_name[0]]).stdout.strip()
+    match = re.match(r"https://(?:[^@]+@)?github\.com/(.+)", url)
+    if not match:
+        return None
+    return f"https://{token}@github.com/{match.group(1)}"
+
+
+def save_to_git(message: str | None = None, github_token: str | None = None) -> None:
     """Ajoute tous les changements, commit et push vers le remote courant.
 
     Ne fait rien (et le signale) si aucun changement n'est detecte, pour
     eviter les commits vides.
+
+    `github_token` (ou la variable d'environnement GITHUB_TOKEN) est necessaire
+    pour le push si le depot est prive, ou si l'environnement (ex: Colab) n'a
+    pas d'identifiants git deja enregistres. Un token se cree sur
+    https://github.com/settings/tokens (droit "repo" suffit).
     """
     if message is None:
         message = f"Sauvegarde automatique du {datetime.now():%Y-%m-%d %H:%M}"
@@ -66,11 +86,22 @@ def save_to_git(message: str | None = None) -> None:
         raise RuntimeError("Echec de 'git commit'")
     print(commit.stdout)
 
-    push = _run(["git", "push"])
+    token = github_token or os.environ.get("GITHUB_TOKEN")
+    push_cmd = ["git", "push"]
+    if token:
+        auth_url = _push_url_with_token(token)
+        if auth_url:
+            branch = _run(["git", "branch", "--show-current"]).stdout.strip()
+            push_cmd = ["git", "push", auth_url, branch]
+
+    push = _run(push_cmd)
     if push.returncode != 0:
         print(push.stdout, push.stderr)
         raise RuntimeError(
-            "Echec de 'git push' (verifie l'authentification GitHub)"
+            "Echec de 'git push' : authentification GitHub necessaire. "
+            "Passe un token via save_to_git(message, github_token=...) "
+            "ou la variable d'environnement GITHUB_TOKEN "
+            "(cree un token sur https://github.com/settings/tokens, droit 'repo')."
         )
     print("[save_to_git] Push effectue avec succes.")
 
